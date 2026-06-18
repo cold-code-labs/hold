@@ -4,6 +4,11 @@ import { applyMigrations } from "./migrate";
 import { ensureGlobalRoles } from "./roles";
 import { projectMigrationsDir } from "./paths";
 import { config } from "./config";
+import {
+  poolerEnabled,
+  registerTenant,
+  poolerConnectionString,
+} from "./supavisor";
 
 const SLUG = /^[a-z][a-z0-9_]{1,40}$/;
 
@@ -13,6 +18,7 @@ export type Project = {
   role: string;
   applied: string[];
   connectionString: string;
+  pooled: boolean;
 };
 
 /**
@@ -32,7 +38,17 @@ export async function createProject(name: string): Promise<Project> {
 
   const database = `proj_${name}`;
   const role = `proj_${name}`; // the authenticator (login) role
-  const password = crypto.randomBytes(18).toString("base64url");
+  const externalId = name; // Supavisor tenant id
+
+  // Reuse the stored authenticator password if the project already exists, so
+  // re-provisioning is idempotent and the tenant can be re-registered.
+  const prev = await controlPool.query(
+    "select db_password from projects where name = $1",
+    [name],
+  );
+  const password =
+    (prev.rows[0]?.db_password as string | undefined) ??
+    crypto.randomBytes(18).toString("base64url");
 
   const admin = adminClient();
   await admin.connect();
@@ -47,6 +63,9 @@ export async function createProject(name: string): Promise<Project> {
         `create role ${ident(role)} login noinherit password ${lit(password)}`,
       );
       await admin.query(`grant anon, authenticated to ${ident(role)}`);
+    } else if (!prev.rows[0]?.db_password) {
+      // Role exists but we never stored its password — reset to a known one.
+      await admin.query(`alter role ${ident(role)} password ${lit(password)}`);
     }
 
     const d = await admin.query(
@@ -77,18 +96,29 @@ export async function createProject(name: string): Promise<Project> {
   }
 
   await controlPool.query(
-    `insert into projects (name, database, role) values ($1, $2, $3)
-     on conflict (name) do nothing`,
-    [name, database, role],
+    `insert into projects (name, database, role, db_password, tenant_external_id)
+       values ($1, $2, $3, $4, $5)
+     on conflict (name) do update
+       set db_password = excluded.db_password,
+           tenant_external_id = excluded.tenant_external_id`,
+    [name, database, role, password, externalId],
   );
 
-  return {
-    name,
-    database,
-    role,
-    applied,
-    connectionString: connStr(database, role, password),
-  };
+  // Route the project through the pooler when one is configured.
+  let pooled = false;
+  let connectionString = connStr(database, role, password);
+  if (poolerEnabled()) {
+    await registerTenant({ externalId, database, dbUser: role, dbPassword: password });
+    connectionString = poolerConnectionString({
+      externalId,
+      database,
+      dbUser: role,
+      dbPassword: password,
+    });
+    pooled = true;
+  }
+
+  return { name, database, role, applied, connectionString, pooled };
 }
 
 export async function listProjects() {
