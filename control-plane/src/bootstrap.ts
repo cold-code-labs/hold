@@ -2,6 +2,7 @@ import { adminClient, dbClient } from "./db";
 import { applyMigrations } from "./migrate";
 import { controlMigrationsDir } from "./paths";
 import { config } from "./config";
+import { ensureProjectZero } from "./zero";
 
 /** Create the control db (`hold`) if missing and apply its migrations. */
 export async function bootstrap() {
@@ -31,6 +32,12 @@ export async function bootstrap() {
     );
   } finally {
     await c.end();
+  }
+
+  // Project zero — prepare its database so GoTrue can migrate cleanly on boot.
+  if (config.jwtSecret) {
+    await ensureProjectZero();
+    console.log(`project zero db ready: ${config.zeroDb}`);
   }
 }
 

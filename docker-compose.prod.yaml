@@ -1,5 +1,5 @@
 # Hold — production stack (deployed via Coolify).
-# db + control-plane + panel as one managed resource.
+# db + control-plane + project-zero auth (GoTrue) + panel, as one resource.
 services:
   db:
     image: postgres:16-alpine
@@ -22,8 +22,42 @@ services:
     environment:
       HOLD_DB_ADMIN_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/postgres
       HOLD_API_PORT: "8787"
+      HOLD_JWT_SECRET: ${HOLD_JWT_SECRET}
+      HOLD_ZERO_DB: hold_zero
+      HOLD_GOTRUE_URL: http://auth:9999
+      HOLD_MASTER_EMAIL: ${HOLD_MASTER_EMAIL}
+      HOLD_MASTER_PASSWORD: ${HOLD_MASTER_PASSWORD}
     depends_on:
       db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8787/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  # Project zero auth. Starts only after the control plane has prepared the
+  # hold_zero database (schema + search_path), so GoTrue migrates cleanly.
+  auth:
+    image: supabase/gotrue:v2.190.0
+    environment:
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/hold_zero?sslmode=disable
+      GOTRUE_DB_NAMESPACE: auth
+      GOTRUE_SITE_URL: ${HOLD_SITE_URL:-https://hold.coldcodelabs.com}
+      GOTRUE_API_EXTERNAL_URL: ${HOLD_SITE_URL:-https://hold.coldcodelabs.com}
+      API_EXTERNAL_URL: ${HOLD_SITE_URL:-https://hold.coldcodelabs.com}
+      GOTRUE_JWT_SECRET: ${HOLD_JWT_SECRET}
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_EXP: "3600"
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_DISABLE_SIGNUP: "true"
+      GOTRUE_MAILER_AUTOCONFIRM: "true"
+      GOTRUE_API_HOST: 0.0.0.0
+      PORT: "9999"
+    depends_on:
+      control-plane:
         condition: service_healthy
     restart: unless-stopped
 
@@ -33,6 +67,8 @@ services:
       dockerfile: Dockerfile
     environment:
       HOLD_API_URL: http://control-plane:8787
+      HOLD_GOTRUE_URL: http://auth:9999
+      HOLD_JWT_SECRET: ${HOLD_JWT_SECRET}
     depends_on:
       - control-plane
     restart: unless-stopped
