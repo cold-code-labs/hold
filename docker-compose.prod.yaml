@@ -27,6 +27,14 @@ services:
       HOLD_GOTRUE_URL: http://auth:9999
       HOLD_MASTER_EMAIL: ${HOLD_MASTER_EMAIL}
       HOLD_MASTER_PASSWORD: ${HOLD_MASTER_PASSWORD}
+      # Supavisor pooler (internal). The control plane creates the `_supabase`
+      # metadata db at bootstrap and routes new projects through the pooler.
+      HOLD_POOLER_API_URL: http://pooler:4000
+      SUPAVISOR_API_JWT_SECRET: ${SUPAVISOR_API_JWT_SECRET}
+      HOLD_POOLER_UPSTREAM_HOST: db
+      HOLD_POOLER_UPSTREAM_PORT: "5432"
+      HOLD_POOLER_HOST: pooler
+      HOLD_POOLER_PORT: "6543"
     depends_on:
       db:
         condition: service_healthy
@@ -74,6 +82,39 @@ services:
     restart: unless-stopped
     expose:
       - "3000"
+
+  # Multi-tenant connection pooler. Tenants (one per project) are provisioned
+  # via its management API by the control plane. Starts after the control plane
+  # is healthy, so the `_supabase` metadata db already exists. Internal only.
+  pooler:
+    image: supabase/supavisor:2.9.7
+    command: ["/bin/sh", "-c", "/app/bin/migrate && /app/bin/server"]
+    environment:
+      PORT: "4000"
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: _supabase
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      DATABASE_URL: ecto://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/_supabase
+      SECRET_KEY_BASE: ${SUPAVISOR_SECRET_KEY_BASE}
+      VAULT_ENC_KEY: ${SUPAVISOR_VAULT_ENC_KEY}
+      API_JWT_SECRET: ${SUPAVISOR_API_JWT_SECRET}
+      METRICS_JWT_SECRET: ${SUPAVISOR_API_JWT_SECRET}
+      CLUSTER_POSTGRES: "true"
+      REGION: local
+      ERL_AFLAGS: -proto_dist inet_tcp
+      POOLER_TENANT_ID: hold
+      POOLER_DEFAULT_POOL_SIZE: "10"
+      POOLER_MAX_CLIENT_CONN: "100"
+      POOLER_POOL_MODE: transaction
+      DB_POOL_SIZE: "5"
+    depends_on:
+      control-plane:
+        condition: service_healthy
+    expose:
+      - "4000"
+      - "6543"
+    restart: unless-stopped
 
 volumes:
   hold_pgdata:

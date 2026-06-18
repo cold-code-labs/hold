@@ -39,6 +39,31 @@ export async function bootstrap() {
     await ensureProjectZero();
     console.log(`project zero db ready: ${config.zeroDb}`);
   }
+
+  // Supavisor metadata db — Supavisor's own `migrate` populates it, but the
+  // database itself must exist before the pooler boots. Created here so the
+  // pooler can depend on the control plane being healthy.
+  if (config.poolerApiSecret) {
+    await ensureDatabase(config.poolerMetaDb);
+    console.log(`supavisor metadata db ready: ${config.poolerMetaDb}`);
+  }
+}
+
+/** Create a database if it does not already exist. */
+async function ensureDatabase(name: string): Promise<void> {
+  const admin = adminClient();
+  await admin.connect();
+  try {
+    const d = await admin.query(
+      "select 1 from pg_database where datname = $1",
+      [name],
+    );
+    if (!d.rowCount) {
+      await admin.query(`create database "${name}"`);
+    }
+  } finally {
+    await admin.end();
+  }
 }
 
 bootstrap()

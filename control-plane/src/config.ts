@@ -15,6 +15,7 @@ export const config = {
   // Supavisor pooler. Empty apiUrl/secret = disabled (direct connection).
   poolerApiUrl: process.env.HOLD_POOLER_API_URL ?? "",
   poolerApiSecret: process.env.SUPAVISOR_API_JWT_SECRET ?? "",
+  poolerMetaDb: process.env.SUPAVISOR_META_DB ?? "_supabase",
   poolerUpstreamHost: process.env.HOLD_POOLER_UPSTREAM_HOST ?? "db",
   poolerUpstreamPort: Number(process.env.HOLD_POOLER_UPSTREAM_PORT ?? 5432),
   poolerHost: process.env.HOLD_POOLER_HOST ?? "localhost",
