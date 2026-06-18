@@ -1,0 +1,43 @@
+# Hold — production stack (deployed via Coolify).
+# db + control-plane + panel as one managed resource.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: postgres
+    volumes:
+      - hold_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  control-plane:
+    build:
+      context: .
+      dockerfile: control-plane/Dockerfile
+    environment:
+      HOLD_DB_ADMIN_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/postgres
+      HOLD_API_PORT: "8787"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  panel:
+    build:
+      context: ./panel
+      dockerfile: Dockerfile
+    environment:
+      HOLD_API_URL: http://control-plane:8787
+    depends_on:
+      - control-plane
+    restart: unless-stopped
+    expose:
+      - "3000"
+
+volumes:
+  hold_pgdata:
