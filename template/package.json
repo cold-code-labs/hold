@@ -1,0 +1,29 @@
+{
+  "name": "@hold/instance-template",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Hold instance template — a Next app backed by a Hold project (Postgres + RLS) with better-auth in-app.",
+  "scripts": {
+    "dev": "next dev -p 3100",
+    "build": "next build",
+    "start": "next start -p 3100",
+    "auth:migrate": "npx @better-auth/cli@latest migrate -y",
+    "auth:generate": "npx @better-auth/cli@latest generate -y",
+    "auth:harden": "node db/run.mjs db/harden-auth.sql",
+    "auth:setup": "pnpm auth:migrate && pnpm auth:harden"
+  },
+  "dependencies": {
+    "better-auth": "^1.6.19",
+    "next": "^15.5.4",
+    "pg": "^8.13.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.11.10",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.7.2"
+  }
+}
