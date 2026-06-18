@@ -44,8 +44,11 @@ services:
       interval: 5s
       timeout: 5s
       retries: 30
-    expose:
-      - "8787"
+    # Reachable only over the WireGuard link (surtr's private IP), never the
+    # public internet. Heimdall (on ymir) calls it across WireGuard with the
+    # bearer key. Internal services still reach it as control-plane:8787.
+    ports:
+      - "10.10.0.2:8787:8787"
     restart: unless-stopped
 
   # Project zero auth. Starts only after the control plane has prepared the

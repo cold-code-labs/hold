@@ -7,10 +7,8 @@
     "dev": "next dev -p 3100",
     "build": "next build",
     "start": "next start -p 3100",
-    "auth:migrate": "npx @better-auth/cli@latest migrate -y",
-    "auth:generate": "npx @better-auth/cli@latest generate -y",
-    "auth:harden": "node db/run.mjs db/harden-auth.sql",
-    "auth:setup": "pnpm auth:migrate && pnpm auth:harden"
+    "auth:setup": "node db/run.mjs db/auth-schema.sql db/harden-auth.sql",
+    "auth:regenerate": "npx @better-auth/cli@latest generate -y"
   },
   "dependencies": {
     "better-auth": "^1.6.19",

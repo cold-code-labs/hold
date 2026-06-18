@@ -19,6 +19,11 @@ export type Project = {
   applied: string[];
   connectionString: string;
   pooled: boolean;
+  // Direct connection for the in-app auth framework (better-auth). A dedicated
+  // role that owns its tables — isolated from the app's data role, not the
+  // superuser. Session-consistent (not the transaction-mode pooler).
+  authRole: string;
+  authConnectionString: string;
 };
 
 /**
@@ -38,16 +43,20 @@ export async function createProject(name: string): Promise<Project> {
 
   const database = `proj_${name}`;
   const role = `proj_${name}`; // the authenticator (login) role
+  const authRole = `proj_${name}_auth`; // owns the in-app auth tables
   const externalId = name; // Supavisor tenant id
 
-  // Reuse the stored authenticator password if the project already exists, so
-  // re-provisioning is idempotent and the tenant can be re-registered.
+  // Reuse stored passwords if the project already exists, so re-provisioning is
+  // idempotent and the tenant can be re-registered.
   const prev = await controlPool.query(
-    "select db_password from projects where name = $1",
+    "select db_password, auth_db_password from projects where name = $1",
     [name],
   );
   const password =
     (prev.rows[0]?.db_password as string | undefined) ??
+    crypto.randomBytes(18).toString("base64url");
+  const authPassword =
+    (prev.rows[0]?.auth_db_password as string | undefined) ??
     crypto.randomBytes(18).toString("base64url");
 
   const admin = adminClient();
@@ -76,10 +85,22 @@ export async function createProject(name: string): Promise<Project> {
       await admin.query(`create database ${ident(database)}`);
     }
 
-    // Only this project's authenticator may connect to this database.
+    // The auth role: a dedicated login that owns the in-app auth tables.
+    const ar = await admin.query("select 1 from pg_roles where rolname = $1", [
+      authRole,
+    ]);
+    if (!ar.rowCount) {
+      await admin.query(
+        `create role ${ident(authRole)} login password ${lit(authPassword)}`,
+      );
+    } else if (!prev.rows[0]?.auth_db_password) {
+      await admin.query(`alter role ${ident(authRole)} password ${lit(authPassword)}`);
+    }
+
+    // Only this project's roles may connect to this database.
     await admin.query(`revoke connect on database ${ident(database)} from public`);
     await admin.query(
-      `grant connect on database ${ident(database)} to ${ident(role)}`,
+      `grant connect on database ${ident(database)} to ${ident(role)}, ${ident(authRole)}`,
     );
   } finally {
     await admin.end();
@@ -91,17 +112,22 @@ export async function createProject(name: string): Promise<Project> {
   let applied: string[] = [];
   try {
     applied = await applyMigrations(target, projectMigrationsDir);
+    // Let the auth role create and own its tables in this database.
+    await target.query(
+      `grant usage, create on schema public to ${ident(authRole)}`,
+    );
   } finally {
     await target.end();
   }
 
   await controlPool.query(
-    `insert into projects (name, database, role, db_password, tenant_external_id)
-       values ($1, $2, $3, $4, $5)
+    `insert into projects (name, database, role, db_password, tenant_external_id, auth_db_password)
+       values ($1, $2, $3, $4, $5, $6)
      on conflict (name) do update
        set db_password = excluded.db_password,
-           tenant_external_id = excluded.tenant_external_id`,
-    [name, database, role, password, externalId],
+           tenant_external_id = excluded.tenant_external_id,
+           auth_db_password = excluded.auth_db_password`,
+    [name, database, role, password, externalId, authPassword],
   );
 
   // Route the project through the pooler when one is configured.
@@ -118,7 +144,16 @@ export async function createProject(name: string): Promise<Project> {
     pooled = true;
   }
 
-  return { name, database, role, applied, connectionString, pooled };
+  return {
+    name,
+    database,
+    role,
+    applied,
+    connectionString,
+    pooled,
+    authRole,
+    authConnectionString: connStr(database, authRole, authPassword),
+  };
 }
 
 export async function listProjects() {
