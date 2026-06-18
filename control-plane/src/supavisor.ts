@@ -26,15 +26,23 @@ function apiToken(): string {
   return `${header}.${payload}.${sig}`;
 }
 
+export type TenantUser = {
+  dbUser: string;
+  dbPassword: string;
+  /** transaction = data (RLS) connections; session = the auth framework. */
+  mode: "transaction" | "session";
+};
+
 /**
- * Register (or update) a tenant routing `externalId` → `database`, with the
- * project's authenticator as the upstream user. Idempotent (PUT).
+ * Register (or update) a tenant routing `externalId` → `database`. Each user is
+ * a distinct upstream login: the authenticator for RLS-bound data (transaction
+ * mode) and the auth role for the in-app auth framework (session mode).
+ * Idempotent (PUT).
  */
 export async function registerTenant(opts: {
   externalId: string;
   database: string;
-  dbUser: string;
-  dbPassword: string;
+  users: TenantUser[];
 }): Promise<void> {
   const res = await fetch(
     `${config.poolerApiUrl}/api/tenants/${encodeURIComponent(opts.externalId)}`,
@@ -52,15 +60,13 @@ export async function registerTenant(opts: {
           ip_version: "auto",
           enforce_ssl: false,
           require_user: true,
-          users: [
-            {
-              db_user: opts.dbUser,
-              db_password: opts.dbPassword,
-              pool_size: 5,
-              mode_type: "transaction",
-              is_manager: false,
-            },
-          ],
+          users: opts.users.map((u) => ({
+            db_user: u.dbUser,
+            db_password: u.dbPassword,
+            pool_size: 5,
+            mode_type: u.mode,
+            is_manager: false,
+          })),
         },
       }),
     },
@@ -72,14 +78,20 @@ export async function registerTenant(opts: {
   }
 }
 
-/** The pooler-backed connection string a client/SDK uses to reach the project. */
+/**
+ * The pooler-backed connection string a client/SDK uses to reach the project.
+ * `session` selects the session-mode port (for the auth framework); otherwise
+ * the transaction-mode port (for RLS-bound data).
+ */
 export function poolerConnectionString(opts: {
   externalId: string;
   database: string;
   dbUser: string;
   dbPassword: string;
+  session?: boolean;
 }): string {
   const user = encodeURIComponent(`${opts.dbUser}.${opts.externalId}`);
   const pw = encodeURIComponent(opts.dbPassword);
-  return `postgres://${user}:${pw}@${config.poolerHost}:${config.poolerPort}/${opts.database}`;
+  const port = opts.session ? config.poolerSessionPort : config.poolerPort;
+  return `postgres://${user}:${pw}@${config.poolerHost}:${port}/${opts.database}`;
 }

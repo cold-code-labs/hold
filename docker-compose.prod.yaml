@@ -34,8 +34,11 @@ services:
       SUPAVISOR_API_JWT_SECRET: ${SUPAVISOR_API_JWT_SECRET}
       HOLD_POOLER_UPSTREAM_HOST: db
       HOLD_POOLER_UPSTREAM_PORT: "5432"
-      HOLD_POOLER_HOST: pooler
+      # Address instances (separate Coolify apps on surtr) use to reach the
+      # pooler: surtr's private WireGuard IP, where the pooler ports are bound.
+      HOLD_POOLER_HOST: 10.10.0.2
       HOLD_POOLER_PORT: "6543"
+      HOLD_POOLER_SESSION_PORT: "5432"
     depends_on:
       db:
         condition: service_healthy
@@ -119,7 +122,12 @@ services:
         condition: service_healthy
     expose:
       - "4000"
-      - "6543"
+    # Published on surtr's private WireGuard IP so instances (separate Coolify
+    # apps on this host) can reach the pooler — transaction mode for RLS data,
+    # session mode for the auth framework. Not on the public internet.
+    ports:
+      - "10.10.0.2:6543:6543"
+      - "10.10.0.2:5432:5432"
     restart: unless-stopped
 
 volumes:

@@ -130,16 +130,33 @@ export async function createProject(name: string): Promise<Project> {
     [name, database, role, password, externalId, authPassword],
   );
 
-  // Route the project through the pooler when one is configured.
+  // Route the project through the pooler when one is configured: the
+  // authenticator in transaction mode (RLS data), the auth role in session mode
+  // (the in-app auth framework). Both reach the same database.
   let pooled = false;
   let connectionString = connStr(database, role, password);
+  let authConnectionString = connStr(database, authRole, authPassword);
   if (poolerEnabled()) {
-    await registerTenant({ externalId, database, dbUser: role, dbPassword: password });
+    await registerTenant({
+      externalId,
+      database,
+      users: [
+        { dbUser: role, dbPassword: password, mode: "transaction" },
+        { dbUser: authRole, dbPassword: authPassword, mode: "session" },
+      ],
+    });
     connectionString = poolerConnectionString({
       externalId,
       database,
       dbUser: role,
       dbPassword: password,
+    });
+    authConnectionString = poolerConnectionString({
+      externalId,
+      database,
+      dbUser: authRole,
+      dbPassword: authPassword,
+      session: true,
     });
     pooled = true;
   }
@@ -152,7 +169,7 @@ export async function createProject(name: string): Promise<Project> {
     connectionString,
     pooled,
     authRole,
-    authConnectionString: connStr(database, authRole, authPassword),
+    authConnectionString,
   };
 }
 

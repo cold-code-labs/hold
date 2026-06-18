@@ -24,6 +24,10 @@ export const config = {
   poolerUpstreamPort: Number(process.env.HOLD_POOLER_UPSTREAM_PORT ?? 5432),
   poolerHost: process.env.HOLD_POOLER_HOST ?? "localhost",
   poolerPort: Number(process.env.HOLD_POOLER_PORT ?? 6543),
+  // Session-mode port — a dedicated upstream connection per client. Used by the
+  // in-app auth framework (better-auth), which runs multi-statement transactions
+  // that transaction-mode pooling would break.
+  poolerSessionPort: Number(process.env.HOLD_POOLER_SESSION_PORT ?? 5432),
 };
 
 /** Returns the admin connection string pointed at a specific database. */
