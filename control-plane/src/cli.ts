@@ -1,4 +1,6 @@
 import { createProject, listProjects } from "./provision";
+import { ensureProjectZero, ensureMaster } from "./zero";
+import { config } from "./config";
 
 const [cmd, arg] = process.argv.slice(2);
 
@@ -13,8 +15,22 @@ async function main() {
     case "list":
       console.log(JSON.stringify(await listProjects(), null, 2));
       break;
+    case "zero": {
+      // Prepare project zero's database (idempotent).
+      await ensureProjectZero();
+      console.log(`project zero db ready: ${config.zeroDb}`);
+      console.log("→ bring up GoTrue (docker compose up -d auth), then: cli master");
+      break;
+    }
+    case "master": {
+      // Create/confirm the master operator (requires GoTrue to be running).
+      const email = arg || config.masterEmail;
+      const r = await ensureMaster(email, config.masterPassword);
+      console.log(`master ${email}: ${r.created ? "created" : "already existed"}`);
+      break;
+    }
     default:
-      console.log("usage: cli <create <name> | list>");
+      console.log("usage: cli <create <name> | list | zero | master [email]>");
   }
   process.exit(0);
 }

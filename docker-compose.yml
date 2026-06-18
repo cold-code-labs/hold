@@ -1,6 +1,6 @@
 # Hold — standalone dev stack
-# Slice 1: Postgres (the heart of the shared core).
-# Supavisor / Garage / GoTrue land in upcoming slices.
+# Postgres (the heart of the shared core) + GoTrue (project zero auth).
+# Supavisor / Garage land in upcoming slices.
 services:
   db:
     image: postgres:16-alpine
@@ -18,6 +18,34 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # Project zero auth. The panel authenticates its operators against this GoTrue.
+  # It is just a Hold project that the installer brings up at bootstrap.
+  auth:
+    image: supabase/gotrue:v2.190.0
+    container_name: hold-auth
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${HOLD_ZERO_DB:-hold_zero}?sslmode=disable
+      GOTRUE_DB_NAMESPACE: auth
+      GOTRUE_SITE_URL: ${HOLD_SITE_URL:-http://localhost:3000}
+      GOTRUE_API_EXTERNAL_URL: ${HOLD_GOTRUE_URL:-http://localhost:9999}
+      API_EXTERNAL_URL: ${HOLD_GOTRUE_URL:-http://localhost:9999}
+      GOTRUE_JWT_SECRET: ${HOLD_JWT_SECRET}
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_EXP: "3600"
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_DISABLE_SIGNUP: "true"
+      GOTRUE_MAILER_AUTOCONFIRM: "true"
+      GOTRUE_API_HOST: 0.0.0.0
+      PORT: "9999"
+    ports:
+      - "${HOLD_GOTRUE_PORT:-9999}:9999"
+    restart: unless-stopped
 
 volumes:
   hold_pgdata:
