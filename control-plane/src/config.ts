@@ -5,6 +5,10 @@ export const config = {
   controlDb: process.env.HOLD_CONTROL_DB ?? "hold",
   apiPort: Number(process.env.HOLD_API_PORT ?? 8787),
 
+  // Bearer key guarding the /v1 management API. When set, every /v1 request
+  // must carry `Authorization: Bearer <key>`. Empty = open (dev only).
+  apiKey: process.env.HOLD_API_KEY ?? "",
+
   // Auth — project zero (GoTrue) + panel JWT verification
   jwtSecret: process.env.HOLD_JWT_SECRET ?? "",
   zeroDb: process.env.HOLD_ZERO_DB ?? "hold_zero",

@@ -7,6 +7,23 @@ import { config } from "./config";
 const app = new Hono();
 
 /**
+ * Guard the management API with a bearer key. `/health` stays open so Coolify
+ * and the compose can probe it. When no key is configured we fail closed on
+ * /v1 (the API can create databases — never leave it open in production).
+ */
+app.use("/v1/*", async (c, next) => {
+  if (!config.apiKey) {
+    return c.json({ error: "HOLD_API_KEY not configured" }, 503);
+  }
+  const auth = c.req.header("Authorization") ?? "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  if (token !== config.apiKey) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  await next();
+});
+
+/**
  * Once GoTrue (project zero) is reachable, ensure the master operator exists.
  * Runs in the background so it never blocks the API; best-effort with retries.
  */
