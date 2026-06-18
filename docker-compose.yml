@@ -47,5 +47,40 @@ services:
       - "${HOLD_GOTRUE_PORT:-9999}:9999"
     restart: unless-stopped
 
+  # Multi-tenant connection pooler. Tenants (one per project) are provisioned
+  # via its management API; clients route by encoding the tenant in the
+  # username (user.tenant_id). pooler.exs is skipped — we provision by API.
+  pooler:
+    image: supabase/supavisor:2.9.7
+    container_name: hold-pooler
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["/bin/sh", "-c", "/app/bin/migrate && /app/bin/server"]
+    environment:
+      PORT: "4000"
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: _supabase
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      DATABASE_URL: ecto://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/_supabase
+      SECRET_KEY_BASE: ${SUPAVISOR_SECRET_KEY_BASE}
+      VAULT_ENC_KEY: ${SUPAVISOR_VAULT_ENC_KEY}
+      API_JWT_SECRET: ${SUPAVISOR_API_JWT_SECRET}
+      METRICS_JWT_SECRET: ${SUPAVISOR_API_JWT_SECRET}
+      CLUSTER_POSTGRES: "true"
+      REGION: local
+      ERL_AFLAGS: -proto_dist inet_tcp
+      POOLER_TENANT_ID: hold
+      POOLER_DEFAULT_POOL_SIZE: "10"
+      POOLER_MAX_CLIENT_CONN: "100"
+      POOLER_POOL_MODE: transaction
+      DB_POOL_SIZE: "5"
+    ports:
+      - "${HOLD_POOLER_API_PORT:-4000}:4000"
+      - "${HOLD_POOLER_PORT:-6543}:6543"
+      - "${HOLD_POOLER_SESSION_PORT:-5432}:5432"
+    restart: unless-stopped
+
 volumes:
   hold_pgdata:
