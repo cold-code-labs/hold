@@ -79,6 +79,23 @@ export async function registerTenant(opts: {
 }
 
 /**
+ * Deregister a tenant — drops its pooler routes and releases the upstream
+ * connections, so nothing blocks a subsequent DROP DATABASE. Idempotent: a
+ * missing tenant (404) is treated as already-gone.
+ */
+export async function deregisterTenant(externalId: string): Promise<void> {
+  const res = await fetch(
+    `${config.poolerApiUrl}/api/tenants/${encodeURIComponent(externalId)}`,
+    { method: "DELETE", headers: { Authorization: `Bearer ${apiToken()}` } },
+  );
+  if (res.status !== 200 && res.status !== 204 && res.status !== 404) {
+    throw new Error(
+      `Supavisor deregisterTenant failed (${res.status}): ${await res.text()}`,
+    );
+  }
+}
+
+/**
  * The pooler-backed connection string a client/SDK uses to reach the project.
  * `session` selects the session-mode port (for the auth framework); otherwise
  * the transaction-mode port (for RLS-bound data).

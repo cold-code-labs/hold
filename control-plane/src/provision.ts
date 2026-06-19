@@ -7,6 +7,7 @@ import { config } from "./config";
 import {
   poolerEnabled,
   registerTenant,
+  deregisterTenant,
   poolerConnectionString,
 } from "./supavisor";
 
@@ -171,6 +172,60 @@ export async function createProject(name: string): Promise<Project> {
     authRole,
     authConnectionString,
   };
+}
+
+/**
+ * Tear down a project — the inverse of createProject:
+ *  - deregister the Supavisor tenant (release pooler connections)
+ *  - drop the database (FORCE — terminate any straggler backends; pg ≥ 13)
+ *  - drop the per-project login roles (authenticator + auth owner)
+ *  - delete the control-registry row
+ * Idempotent: a missing tenant/db/role/row is treated as already-gone, so a
+ * partially-completed earlier teardown can always be retried to completion.
+ */
+export async function destroyProject(
+  name: string,
+): Promise<{ name: string; database: string; dropped: boolean }> {
+  if (!SLUG.test(name)) {
+    throw new Error(
+      `invalid project name '${name}' (a-z, 0-9, _, must start with a letter)`,
+    );
+  }
+
+  const database = `proj_${name}`;
+  const role = `proj_${name}`;
+  const authRole = `proj_${name}_auth`;
+
+  // Prefer the registered tenant id; fall back to the convention (the name).
+  const reg = await controlPool.query(
+    "select tenant_external_id from projects where name = $1",
+    [name],
+  );
+  const externalId =
+    (reg.rows[0]?.tenant_external_id as string | undefined) ?? name;
+
+  // 1. Release the pooler first, so no upstream connection blocks the drop.
+  if (poolerEnabled()) {
+    await deregisterTenant(externalId);
+  }
+
+  const admin = adminClient();
+  await admin.connect();
+  try {
+    // 2. Drop the database (FORCE terminates remaining backends).
+    await admin.query(`drop database if exists ${ident(database)} with (force)`);
+    // 3. Roles are only droppable once the database — and the objects the auth
+    //    role owned inside it — is gone.
+    await admin.query(`drop role if exists ${ident(authRole)}`);
+    await admin.query(`drop role if exists ${ident(role)}`);
+  } finally {
+    await admin.end();
+  }
+
+  // 4. Forget it in the registry.
+  await controlPool.query("delete from projects where name = $1", [name]);
+
+  return { name, database, dropped: true };
 }
 
 export async function listProjects() {

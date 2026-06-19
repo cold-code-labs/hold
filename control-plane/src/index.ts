@@ -1,6 +1,6 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
-import { createProject, listProjects } from "./provision";
+import { createProject, listProjects, destroyProject } from "./provision";
 import { ensureMaster } from "./zero";
 import { config } from "./config";
 
@@ -55,6 +55,15 @@ app.post("/v1/projects", async (c) => {
   try {
     const res = await createProject(body.name);
     return c.json(res, 201);
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 400);
+  }
+});
+
+app.delete("/v1/projects/:name", async (c) => {
+  try {
+    const res = await destroyProject(c.req.param("name"));
+    return c.json(res);
   } catch (e) {
     return c.json({ error: (e as Error).message }, 400);
   }

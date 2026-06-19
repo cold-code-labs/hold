@@ -1,4 +1,4 @@
-import { createProject, listProjects } from "./provision";
+import { createProject, listProjects, destroyProject } from "./provision";
 import { ensureProjectZero, ensureMaster } from "./zero";
 import { config } from "./config";
 
@@ -9,6 +9,12 @@ async function main() {
     case "create": {
       if (!arg) throw new Error("usage: cli create <name>");
       const res = await createProject(arg);
+      console.log(JSON.stringify(res, null, 2));
+      break;
+    }
+    case "destroy": {
+      if (!arg) throw new Error("usage: cli destroy <name>");
+      const res = await destroyProject(arg);
       console.log(JSON.stringify(res, null, 2));
       break;
     }
@@ -30,7 +36,9 @@ async function main() {
       break;
     }
     default:
-      console.log("usage: cli <create <name> | list | zero | master [email]>");
+      console.log(
+        "usage: cli <create <name> | destroy <name> | list | zero | master [email]>",
+      );
   }
   process.exit(0);
 }
