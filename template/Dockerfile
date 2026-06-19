@@ -14,8 +14,8 @@ RUN pnpm build
 
 FROM base AS run
 ENV NODE_ENV=production
-ENV PORT=3100
+ENV PORT=3000
 COPY --from=build /app ./
-EXPOSE 3100
+EXPOSE 3000
 # Ensure the auth schema exists and is locked down, then start.
 CMD ["sh", "-c", "node db/run.mjs db/auth-schema.sql db/harden-auth.sql && pnpm start"]
